@@ -21,6 +21,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"openflux/netbind"
 	"openflux/transport"
 	"openflux/utils"
 )
@@ -156,6 +157,7 @@ func authorizeWithJar(docURL string, jar http.CookieJar) (*volgaAuth, error) {
 	session := &http.Client{
 		Jar: jar,
 		Transport: &http.Transport{
+			DialContext:         netbind.DialContext,
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 100,
 			IdleConnTimeout:     90 * time.Second,
@@ -520,6 +522,7 @@ type relayClient struct {
 
 func newRelayClient(auth *atomic.Pointer[volgaAuth], cfg VolgaConfig, stats *VolgaStats) *relayClient {
 	tr := &http.Transport{
+		DialContext:         netbind.DialContext,
 		MaxIdleConns:        cfg.MaxIdleConns,
 		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
 		IdleConnTimeout:     cfg.IdleConnTimeout,
@@ -940,6 +943,7 @@ func (w *wsListener) connect() error {
 	header.Set("Cookie", strings.Join(cookieParts, "; "))
 
 	dialer := websocket.Dialer{
+		NetDialContext:   netbind.DialContext,
 		HandshakeTimeout: w.config.WSHandshakeTimeout,
 		ReadBufferSize:   4 << 20,
 		WriteBufferSize:  4 << 20,

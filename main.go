@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"openflux/netbind"
 	"openflux/socks5"
 	"openflux/transport"
 	"openflux/transport/control"
@@ -237,7 +238,9 @@ TRANSPORTS  (multi-transport session; requires --encryption-key-file)
       --direct-listen=<addr>   DirectTransport: listen addr on exit.
 
 INBOUND  (only with --role=client)
-  -i, --inbound=tun            utun (macOS) / NEPacketTunnel (iOS). Default on macOS.
+  -i, --inbound=tun            utun (macOS) / Wintun (Windows, needs administrator
+                               and wintun.dll next to the binary) / NEPacketTunnel
+                               (iOS). Default on macOS.
   -i, --inbound=socks5         SOCKS5 + gVisor. Default on other platforms.
   -s, --socks5=<addr>          SOCKS5 listen address (default :1080).
       --http-proxy=<addr>      Also serve an HTTP proxy (CONNECT and plain
@@ -415,6 +418,17 @@ DEPRECATED (removed in v2)
 		// No ingress or exit mode.
 	default:
 		log.Fatalf("unknown --role=%q (want client|exit|bench-send|bench-sink)", *role)
+	}
+
+	// Windows full tunnel: bind the core's sockets to the real interface
+	// before any transport dials, so the carriers stay out of the tunnel
+	// once it takes the default route (see package netbind).
+	if *role == roleClient && *inbound == inboundTUN && runtime.GOOS == "windows" {
+		index, err := netbind.BindDefault()
+		if err != nil {
+			log.Fatalf("tun: %v", err)
+		}
+		log.Printf("Сокеты ядра привязаны к интерфейсу %d", index)
 	}
 
 	// Warn when the exit runs on l4 (gVisor): it works everywhere but is
@@ -845,9 +859,9 @@ func runClient(trans transport.Transport, inbound, socksAddr, httpProxyAddr stri
 func runClientTUN(trans transport.Transport) {
 	tc, err := NewTUNClient(trans, 1280)
 	if err != nil {
-		log.Fatalf("utun: %v", err)
+		log.Fatalf("tun: %v", err)
 	}
-	log.Printf("utun interface: %s", tc.Name())
+	log.Printf("tun interface: %s", tc.Name())
 
 	// Save the CURRENT default (which may be another VPN's utun) so
 	// we can restore it on exit no matter what.
@@ -855,9 +869,9 @@ func runClientTUN(trans transport.Transport) {
 		log.Fatalf("save default route: %v", err)
 	}
 	if err := tc.SetupInterface(); err != nil {
-		log.Fatalf("setup utun (need sudo): %v", err)
+		log.Fatalf("setup tun (needs root/administrator): %v", err)
 	}
-	log.Printf("utun up; bypass gateway is %s", tc.Gateway())
+	log.Printf("tun up; bypass gateway is %s", tc.Gateway())
 
 	watcher := NewSocketWatcher(tc.Gateway(), func() {
 		log.Printf("Socket set stable; taking default route into the tunnel")
@@ -867,6 +881,7 @@ func runClientTUN(trans transport.Transport) {
 		}
 		tc.Start()
 		log.Printf("Tunnel active")
+		log.Printf("Running as CLIENT (full tunnel on %s)", tc.Name())
 	})
 	watcher.Start(2 * time.Second)
 
