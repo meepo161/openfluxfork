@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -90,6 +91,8 @@ func TestNodeWizardCheckDocument(t *testing.T) {
 			return yandex.VolgaDocument{Editable: true}, nil
 		case "view":
 			return yandex.VolgaDocument{}, nil
+		case "pow":
+			return yandex.VolgaDocument{}, fmt.Errorf("captcha solve: %w", errors.New("captcha POST unexpected status 400"))
 		default:
 			return yandex.VolgaDocument{}, fmt.Errorf("wrapped: %w", yandex.ErrCaptchaRequired)
 		}
@@ -102,6 +105,10 @@ func TestNodeWizardCheckDocument(t *testing.T) {
 	}
 	if r := wizardCall(t, w, "checkDocument", wizardParams{DocumentURL: "captcha"}); r["ok"] != false || r["captcha"] != true {
 		t.Fatalf("captcha: %v", r)
+	}
+	// A PoW captcha Yandex rejected says nothing about the document either.
+	if r := wizardCall(t, w, "checkDocument", wizardParams{DocumentURL: "pow"}); r["ok"] != false || r["captcha"] != true {
+		t.Fatalf("rejected PoW captcha: %v", r)
 	}
 }
 

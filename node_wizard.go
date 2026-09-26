@@ -258,7 +258,11 @@ func (w *nodeWizard) connected() (*provision.Conn, error) {
 func (w *nodeWizard) checkDocument(documentURL string) map[string]interface{} {
 	doc, err := w.checkDoc(documentURL)
 	if err != nil {
-		captcha := errors.Is(err, yandex.ErrCaptchaRequired) || errors.Is(err, yandex.ErrLoginRequired)
+		// A challenge this computer could not pass, SmartCaptcha or a PoW
+		// captcha Yandex rejected ("captcha solve: ..."), says nothing about
+		// the document: the node opens it from its own address.
+		captcha := errors.Is(err, yandex.ErrCaptchaRequired) || errors.Is(err, yandex.ErrLoginRequired) ||
+			strings.HasPrefix(err.Error(), "captcha solve:")
 		msg := err
 		switch {
 		case captcha:
