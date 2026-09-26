@@ -1,0 +1,147 @@
+name: Coordinated client and node release
+
+# A vX.Y.Z tag is the immutable core revision shared by the Compose client and
+# the Linux exit-node release. node-v* remains the installer-pinned exit-node
+# channel; this workflow is the product release channel.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the v prefix (for a dry run or manual release)"
+        required: true
+        type: string
+      client_ref:
+        description: "Branch or tag of meepo161/openfluxfordesktop to release"
+        required: false
+        type: string
+      publish:
+        description: "Publish both releases (false builds only the client)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: coordinated-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLIENT_REPOSITORY: meepo161/openfluxfordesktop
+  # Set CLIENT_RELEASE_REF to the branch that contains the Compose client
+  # release workflow. It defaults to master after that branch is merged.
+  CLIENT_RELEASE_REF: ${{ vars.CLIENT_RELEASE_REF || 'master' }}
+
+jobs:
+  resolve:
+    name: Resolve the shared version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      core_ref: ${{ steps.release.outputs.core_ref }}
+      client_ref: ${{ steps.release.outputs.client_ref }}
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            core_ref="$GITHUB_REF_NAME"
+            publish=true
+          else
+            version="${{ inputs.version }}"
+            core_ref="$GITHUB_SHA"
+            publish="${{ inputs.publish }}"
+          fi
+          if ! [[ "$version" =~ ^[1-9][0-9]*\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$version' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          client_ref="${{ inputs.client_ref }}"
+          if [ -z "$client_ref" ]; then client_ref="$CLIENT_RELEASE_REF"; fi
+          printf 'version=%s\ncore_ref=%s\nclient_ref=%s\npublish=%s\n' \
+            "$version" "$core_ref" "$client_ref" "$publish" >> "$GITHUB_OUTPUT"
+
+  client:
+    name: Build the Compose clients
+    needs: resolve
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.CLIENT_RELEASE_TOKEN }}
+    steps:
+      - name: Check dispatch credential
+        run: |
+          test -n "$GH_TOKEN" || {
+            echo "::error::Set CLIENT_RELEASE_TOKEN with Actions write access to $CLIENT_REPOSITORY"
+            exit 1
+          }
+
+      - name: Start the client workflow
+        id: dispatch
+        shell: bash
+        run: |
+          started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run release.yml \
+            --repo "$CLIENT_REPOSITORY" \
+            --ref "${{ needs.resolve.outputs.client_ref }}" \
+            -f version="${{ needs.resolve.outputs.version }}" \
+            -f core_ref="${{ needs.resolve.outputs.core_ref }}" \
+            -f publish="${{ needs.resolve.outputs.publish }}"
+          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the client workflow
+        shell: bash
+        run: |
+          for attempt in $(seq 1 30); do
+            run_id=$(gh run list --repo "$CLIENT_REPOSITORY" --workflow release.yml \
+              --event workflow_dispatch --limit 20 --json databaseId,createdAt,headBranch \
+              --jq '.[] | select(.createdAt >= "${{ steps.dispatch.outputs.started_at }}" and .headBranch == "${{ needs.resolve.outputs.client_ref }}") | .databaseId' \
+              | head -n1)
+            if [ -n "$run_id" ]; then
+              echo "Watching client workflow run $run_id"
+              gh run watch "$run_id" --repo "$CLIENT_REPOSITORY" --exit-status
+              exit $?
+            fi
+            sleep 10
+          done
+          echo "::error::The client workflow did not appear within five minutes"
+          exit 1
+
+  exit-node:
+    name: Publish the exit node
+    needs: [resolve, client]
+    if: needs.resolve.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.8"
+          cache: false
+
+      - name: Build exit-node binaries
+        shell: bash
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64 arm; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM=7 go build \
+              -trimpath -buildvcs=false -tags exitnode \
+              -ldflags="-s -w -buildid=" -o "dist/openflux-linux-$arch" .
+          done
+          (cd dist && sha256sum openflux-linux-* > SHA256SUMS)
+
+      - name: Publish the exit-node release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="v${{ needs.resolve.outputs.version }}"
+          gh release create "$tag" dist/openflux-linux-* dist/SHA256SUMS \
+            --title "OpenFlux node $tag" \
+            --notes "Exit-node core for OpenFlux $tag. The matching Compose client release bundles this exact core revision: ${{ needs.resolve.outputs.core_ref }}."
