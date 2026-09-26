@@ -30,9 +30,9 @@ Expected: fail because the workflow does not exist.
 
 Create a workflow that:
 
-1. triggers on `client-v*` tags and manual dispatch with a semver version;
+1. triggers on `v*` tags and manual dispatch with a semver version;
 2. validates the version and resolves the tagged core SHA;
-3. invokes the client workflow with `gh workflow run release.yml --repo meepo161/openfluxfordesktop --ref <client ref>` and inputs `version`, `core_ref=client-vX.Y.Z`, and `publish=true`;
+3. invokes the client workflow with `gh workflow run release.yml --repo meepo161/openfluxfordesktop --ref <client ref>` and inputs `version`, `core_ref=vX.Y.Z`, and `publish=true`;
 4. waits for the dispatched run and fails on a non-success conclusion;
 5. only then builds the Linux `exitnode` artifacts and publishes release assets with the shared version.
 
