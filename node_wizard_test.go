@@ -1,3 +1,5 @@
+//go:build !exitnode
+
 package main
 
 import (

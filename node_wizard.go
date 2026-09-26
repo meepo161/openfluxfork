@@ -1,3 +1,5 @@
+//go:build !exitnode
+
 package main
 
 // --node-wizard: the desktop app's "Своя нода" wizard talks to the core

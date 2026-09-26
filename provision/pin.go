@@ -7,7 +7,7 @@ package provision
 const (
 	PinnedRepo   = "meepo161/openfluxandroidfork"
 	PinnedCommit = "1d701ecca75657fee84c2123f04ff03cf651eeca"
-	PinnedSHA256 = "130fc5fef760bc144a007aeee41aad10e7e1d7ec168a6a51eb76fe70f9898fa0"
+	PinnedSHA256 = "a68ce60ecde8dccc5ef6e541974b874ff3a029b49a17f1255be968d00e1a9313"
 )
 
 // Pinned returns the script location for this build.
