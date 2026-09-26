@@ -5,12 +5,19 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
+	"sync/atomic"
 )
 
+// verbose is atomic and the debug logger is created once: the mobile bridge
+// enables debug on every start while goroutines of the previous connection
+// may still be logging.
 var (
-	debugLog *log.Logger
-	verbose  bool
-	output   io.Writer = os.Stderr
+	output    io.Writer = os.Stderr
+	debugLog            = log.New(os.Stderr, "", log.LstdFlags|log.Lmicroseconds)
+	verbose   atomic.Bool
+	logSinkMu sync.RWMutex
+	logSink   func(string)
 )
 
 // SetOutput redirects all debug and standard log output to w.
@@ -18,22 +25,34 @@ var (
 func SetOutput(w io.Writer) {
 	output = w
 	log.SetOutput(w)
-	if debugLog != nil {
-		debugLog.SetOutput(w)
-	}
+	debugLog.SetOutput(w)
 }
 
 func EnableDebug() {
-	verbose = true
-	debugLog = log.New(output, "", log.LstdFlags|log.Lmicroseconds)
+	verbose.Store(true)
 	log.SetOutput(output)
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 }
 
 func Debugf(format string, args ...interface{}) {
-	if verbose {
-		debugLog.Output(2, fmt.Sprintf(format, args...))
+	if verbose.Load() {
+		message := fmt.Sprintf(format, args...)
+		debugLog.Output(2, message)
+
+		logSinkMu.RLock()
+		sink := logSink
+		logSinkMu.RUnlock()
+		if sink != nil {
+			sink(message)
+		}
 	}
+}
+
+// SetLogSink mirrors debug messages to an embedding application.
+func SetLogSink(sink func(string)) {
+	logSinkMu.Lock()
+	logSink = sink
+	logSinkMu.Unlock()
 }
 
 // Infof always logs, regardless of verbose mode. Used for user-facing status
@@ -48,11 +67,11 @@ func SetDebug(on bool) {
 		EnableDebug()
 		return
 	}
-	verbose = false
+	verbose.Store(false)
 }
 
 func IsVerbose() bool {
-	return verbose
+	return verbose.Load()
 }
 
 // SafeGo runs fn in a new goroutine, recovering from any panic so a crash in
