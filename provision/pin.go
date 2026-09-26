@@ -5,8 +5,8 @@ package provision
 // keeps the hash in step with deploy/node-install.sh; when the script
 // changes, commit it, then point PinnedCommit at that commit.
 const (
-	PinnedRepo   = "meepo161/openfluxandroidfork"
-	PinnedCommit = "1d701ecca75657fee84c2123f04ff03cf651eeca"
+	PinnedRepo   = "meepo161/openfluxfork"
+	PinnedCommit = "c11dd7276ddf5937de2b481d39db545542319a12"
 	PinnedSHA256 = "a68ce60ecde8dccc5ef6e541974b874ff3a029b49a17f1255be968d00e1a9313"
 )
 
