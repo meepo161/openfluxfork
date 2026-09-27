@@ -1,5 +1,11 @@
 # OpenFlux
 
+> [!NOTE]
+> This is a fork of [OpenFlux by p1neappleXpress](https://github.com/p1neappleXpress/OpenFlux): his core, transports
+> and protocol, taken as they are. Thank you, p1neappleXpress! The fork adds the Android bridge (`mobile/`) and
+> the pinned node installer. Apps for Windows, macOS, Linux and Android:
+> [meepo161/openfluxfordesktop](https://github.com/meepo161/openfluxfordesktop/releases/latest).
+
 **English** | [Русский](README.ru.md)
 
 Network stack research tool. IPv4 TCP/UDP tunnel with pluggable transports,

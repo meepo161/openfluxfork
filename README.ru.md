@@ -1,6 +1,10 @@
 # OpenFlux
 
-Этот репозиторий основан на [OpenFlux от p1neappleXpress](https://github.com/p1neappleXpress/OpenFlux).
+> [!NOTE]
+> Это форк [OpenFlux от p1neappleXpress](https://github.com/p1neappleXpress/OpenFlux): его ядро, транспорты и протокол
+> как есть. Спасибо, p1neappleXpress! Форк добавляет Android-мост (`mobile/`) и закреплённый установщик ноды.
+> Приложения для Windows, macOS, Linux и Android:
+> [meepo161/openfluxfordesktop](https://github.com/meepo161/openfluxfordesktop/releases/latest).
 
 Практическая инструкция для VPS, Android и ПК: [docs/CONNECT.ru.md](docs/CONNECT.ru.md).
 
