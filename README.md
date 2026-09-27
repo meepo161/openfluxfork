@@ -36,6 +36,7 @@ The original code is provided **as is**, **without any warranties**.
 | **macOS**   | build from source | CLI + utun L3 client (`--inbound=tun`, default on macOS) |
 | **Linux**   | build from source | CLI client (SOCKS5) / exit node (L3 or L4) |
 | **Windows** | build from source | CLI client (SOCKS5) / exit node (`l4`, or `l3` via QEMU - see TODO) |
+| **Windows / Linux / macOS / Android** | [OpenFlux client releases](https://github.com/meepo161/openfluxfordesktop/releases/latest) | Compose Multiplatform client with this core bundled in desktop packages and Android APKs |
 | **Android** | [OpenFluxAndroid releases](https://github.com/p1neappleXpress/OpenFluxAndroid) | Standalone APK |
 | **Android** | [OpenFlux-Android releases](https://github.com/damnurmum/OpenFlux-Android/releases/latest) | Fork: system-wide VPN or SOCKS5 proxy, multi-transport sessions, captcha handling, phone as exit node |
 | **iOS**     | [TestFlight beta](https://testflight.apple.com/join/BwnAcdus) | System-wide VPN via Network Extension |
@@ -54,6 +55,21 @@ The original code is provided **as is**, **without any warranties**.
 > repository. HUGE thanks!
 >
 > **Android app** - [p1neappleXpress/OpenFluxAndroid](https://github.com/p1neappleXpress/OpenFluxAndroid).
+
+## Coordinated product releases
+
+The `vX.Y.Z` tag in this repository is the product release trigger. It first
+starts the Compose client's release in
+[`meepo161/openfluxfordesktop`](https://github.com/meepo161/openfluxfordesktop)
+with that immutable tag as `core_ref`, then publishes matching Linux exit-node
+binaries. The two GitHub releases therefore carry the same version and core
+revision.
+
+Repository administrators must configure `CLIENT_RELEASE_TOKEN` here: a
+fine-grained token with **Actions: write** access to the client repository.
+For a non-publishing check, manually run the client `release.yml` with the
+same `version` and an immutable `core_ref` tag, leaving `publish` disabled.
+The older `node-v*` tags continue to publish only the installer-pinned node.
 
 ## Architecture
 
