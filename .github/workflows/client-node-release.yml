@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       client_ref:
-        description: "Branch or tag of meepo161/openfluxfordesktop to release"
+        description: "Branch or tag of meepo161/OpenFluxClient to release"
         required: false
         type: string
       publish:
@@ -31,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLIENT_REPOSITORY: meepo161/openfluxfordesktop
+  CLIENT_REPOSITORY: meepo161/OpenFluxClient
   # Set CLIENT_RELEASE_REF to the branch that contains the Compose client
   # release workflow. It defaults to master after that branch is merged.
   CLIENT_RELEASE_REF: ${{ vars.CLIENT_RELEASE_REF || 'master' }}

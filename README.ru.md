@@ -4,7 +4,7 @@
 > Это форк [OpenFlux от p1neappleXpress](https://github.com/p1neappleXpress/OpenFlux): его ядро, транспорты и протокол
 > как есть. Спасибо, p1neappleXpress! Форк добавляет Android-мост (`mobile/`) и закреплённый установщик ноды.
 > Приложения для Windows, macOS, Linux и Android:
-> [meepo161/openfluxfordesktop](https://github.com/meepo161/openfluxfordesktop/releases/latest).
+> [meepo161/OpenFluxClient](https://github.com/meepo161/OpenFluxClient/releases/latest).
 
 Практическая инструкция для VPS, Android и ПК: [docs/CONNECT.ru.md](docs/CONNECT.ru.md).
 
@@ -47,7 +47,7 @@
 | **macOS**   | сборка из исходников | CLI + utun L3-клиент (`--inbound=tun`, по умолчанию на macOS) |
 | **Linux**   | сборка из исходников | CLI-клиент (SOCKS5) / выходная нода (L3 или L4) |
 | **Windows** | сборка из исходников | CLI-клиент (SOCKS5) / выходная нода (`l4`, либо `l3` через QEMU - см. TODO) |
-| **Windows / Linux / macOS / Android** | [Релизы клиента OpenFlux](https://github.com/meepo161/openfluxfordesktop/releases/latest) | Compose Multiplatform-клиент со встроенным ядром в desktop-пакетах и Android APK |
+| **Windows / Linux / macOS / Android** | [Релизы клиента OpenFlux](https://github.com/meepo161/OpenFluxClient/releases/latest) | Compose Multiplatform-клиент со встроенным ядром в desktop-пакетах и Android APK |
 | **Android** | [Релизы OpenFluxAndroid](https://github.com/p1neappleXpress/OpenFluxAndroid) | Отдельный APK |
 | **Android** | [Релизы OpenFlux-Android](https://github.com/damnurmum/OpenFlux-Android/releases/latest) | Форк: системный VPN или SOCKS5-прокси, сессии с несколькими транспортами, обработка капчи, телефон как выходная нода |
 | **iOS**     | [TestFlight бета](https://testflight.apple.com/join/BwnAcdus) | Системный VPN через Network Extension |
@@ -72,7 +72,7 @@
 
 Тег `vX.Y.Z` в этом репозитории запускает продуктовый релиз. Сначала он
 запускает релиз Compose-клиента в
-[`meepo161/openfluxfordesktop`](https://github.com/meepo161/openfluxfordesktop),
+[`meepo161/OpenFluxClient`](https://github.com/meepo161/OpenFluxClient),
 передавая этот неизменяемый тег как `core_ref`; затем публикует совпадающие по
 версии Linux-бинарники выходной ноды. Поэтому оба GitHub Release содержат одну
 версию и одну ревизию ядра.
