@@ -6,7 +6,7 @@ package provision
 // changes, commit it, then point PinnedCommit at that commit.
 const (
 	PinnedRepo   = "meepo161/openfluxfork"
-	PinnedCommit = "c11dd7276ddf5937de2b481d39db545542319a12"
+	PinnedCommit = "4ed30bd948c72d82e5146289295d654d48034f94"
 	PinnedSHA256 = "cbd883f8d8d5509f3554c8e1fc8b246cedfab6ef7f36326fd33e14168d63018c"
 )
 
