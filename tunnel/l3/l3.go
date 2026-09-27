@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"openflux/network"
 	"openflux/transport"
 	"openflux/utils"
 )
@@ -80,6 +81,10 @@ func (t *L3Exit) handleFromTransport(pkt []byte) {
 	}
 	pkt = sl
 
+	// Inbound from the client side of the tunnel: log the packet exactly
+	// as it arrived, before any SNAT, in the canonical format.
+	network.LogPacket("L3", network.DirOutbound, pkt)
+
 	if isFragmentedIPv4(pkt) {
 		if ipU32([4]byte{pkt[12], pkt[13], pkt[14], pkt[15]}) != ipU32(clientIPBytes) {
 			t.dropNotForUs.Add(1)
@@ -128,11 +133,6 @@ func (t *L3Exit) handleFromTransport(pkt []byte) {
 		t.ct.Touch(k, true)
 	}
 
-	if utils.IsVerbose() {
-		utils.Debugf("[L3] ->net  %s:%d -> %s:%d proto=%d len=%d",
-			ipStr(k.srcIP), k.srcPort, ipStr(k.dstIP), k.dstPort, k.proto, len(pkt))
-	}
-
 	if err := t.sendNetwork(pkt); err != nil {
 		t.reportSendError(original, err)
 		t.sendToNetErrors.Add(1)
@@ -152,15 +152,19 @@ func (t *L3Exit) handleFromInternet(pkt []byte) {
 	}
 	pkt = sl
 
-	// Only handle packets addressed to OUR egress IP. SOCK_RAW on Linux
-	// sees every TCP packet on the wire, including unrelated SSH sessions
-	// and the exit's own outbound traffic. Everything else is noise.
 	egress := t.backend.EgressIP()
 	if pkt[16] != egress[0] || pkt[17] != egress[1] ||
 		pkt[18] != egress[2] || pkt[19] != egress[3] {
 		t.dropNotForUs.Add(1)
+		if utils.IsVerbose() {
+			utils.Debugf("[L3] %s (not for us)",
+				network.FormatPacket(network.DirInbound, pkt))
+		}
 		return
 	}
+
+	// Inbound from the network: log before DNAT.
+	network.LogPacket("L3", network.DirInbound, pkt)
 
 	if isFragmentedIPv4(pkt) {
 		pkt, ok = t.fromNetworkFragments.add(pkt, time.Now())

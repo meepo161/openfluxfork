@@ -255,13 +255,15 @@ func (s *SOCKS5Server) handleConnect(clientConn net.Conn, remote net.Addr, targe
 	go func() {
 		defer wg.Done()
 		defer targetConn.Close()
-		io.Copy(&countingWriter{targetConn, &s.bytesSent}, clientConn)
+		n, _ := io.Copy(&countingWriter{targetConn, &s.bytesSent}, clientConn)
+		utils.Debugf("[SOCKS5] %s: -> %s sent %d bytes", remote, targetAddr, n)
 	}()
 
 	go func() {
 		defer wg.Done()
 		defer clientConn.Close()
-		io.Copy(&countingWriter{clientConn, &s.bytesReceived}, targetConn)
+		n, _ := io.Copy(&countingWriter{clientConn, &s.bytesReceived}, targetConn)
+		utils.Debugf("[SOCKS5] %s: <- %s received %d bytes", remote, targetAddr, n)
 	}()
 
 	wg.Wait()
@@ -281,21 +283,24 @@ func containsMethod(methods []byte, target byte) bool {
 // matched (constant-time, to avoid leaking a timing signal on the
 // comparison).
 func (s *SOCKS5Server) authenticate(clientConn net.Conn) bool {
-	buf := make([]byte, 513) // ver(1) + ulen(1) + uname(<=255) + plen(1) + passwd(<=255)
-	n, err := clientConn.Read(buf)
-	if err != nil || n < 2 || buf[0] != 0x01 {
+	// ver(1) ulen(1) uname(ulen) plen(1) passwd(plen); read field by field,
+	// since one Read may return only part of the request.
+	var head [2]byte
+	if _, err := io.ReadFull(clientConn, head[:]); err != nil || head[0] != 0x01 {
 		return false
 	}
-	ulen := int(buf[1])
-	if 2+ulen+1 > n {
+	username := make([]byte, int(head[1]))
+	if _, err := io.ReadFull(clientConn, username); err != nil {
 		return false
 	}
-	username := buf[2 : 2+ulen]
-	plen := int(buf[2+ulen])
-	if 3+ulen+plen > n {
+	var plen [1]byte
+	if _, err := io.ReadFull(clientConn, plen[:]); err != nil {
 		return false
 	}
-	password := buf[3+ulen : 3+ulen+plen]
+	password := make([]byte, int(plen[0]))
+	if _, err := io.ReadFull(clientConn, password); err != nil {
+		return false
+	}
 
 	usernameOK := subtle.ConstantTimeCompare(username, []byte(s.username)) == 1
 	passwordOK := subtle.ConstantTimeCompare(password, []byte(s.password)) == 1

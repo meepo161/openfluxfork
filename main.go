@@ -46,10 +46,26 @@ func expandShortFlags(args []string) []string {
 		"-u": "--url",
 		"-s": "--socks5",
 		"-l": "--local-ip",
-		"-d": "--debug",
 	}
 	out := make([]string, 0, len(args))
-	for _, a := range args {
+	for i, a := range args {
+		// Counted debug flag: -d, -dd, -ddd -> --debug=1..3. Only a run of
+		// d's counts, so single-dash long flags like -direct-listen pass.
+		if n := debugCount(a); n > 0 {
+			out = append(out, fmt.Sprintf("--debug=%d", min(n, utils.LevelHexdump)))
+			continue
+		}
+		if strings.HasPrefix(a, "-d=") {
+			out = append(out, "--debug="+a[len("-d="):])
+			continue
+		}
+		// A bare --debug means -d, unless its level follows ("--debug 2").
+		if a == "--debug" || a == "-debug" {
+			if i+1 >= len(args) || !isNumber(args[i+1]) {
+				out = append(out, "--debug=1")
+				continue
+			}
+		}
 		replaced := false
 		for short, long := range aliases {
 			if a == short {
@@ -109,6 +125,61 @@ func cookieKey(transportType, docURL, maxUid string) string {
 	}
 }
 
+// debugCount returns how many d's make up a -d, -dd, -ddd flag, or 0.
+func debugCount(a string) int {
+	if len(a) < 2 || a[0] != '-' || strings.Trim(a[1:], "d") != "" {
+		return 0
+	}
+	return len(a) - 1
+}
+
+func isNumber(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
+}
+
+// pickSessionContext returns the KDF salt used to derive encryption keys.
+// The same value must be produced on both peers, regardless of how the
+// document URL was supplied (--url, --yandex-url, [Transport] URL, ...).
+//
+// Priority:
+//
+//	explicit      --session-context, if non-empty
+//	--url         globalURL, if set and not the placeholder
+//	transports    URL of the highest-priority transport that has one,
+//	              cupsonline aside
+//	fallback      the placeholder "http://#"
+//
+// A cupsonline "URL" is the room list the exit creates when it starts and
+// prints for clients, so the exit cannot know it beforehand; letting it
+// into the context gave the two sides different keys.
+//
+// This is what the OpenFlux-Android client derives for a Session profile,
+// and the fallback is what older builds used whenever --url was unset, so a
+// node without any document URL (direct, oneme) keeps its old key.
+func pickSessionContext(explicit, globalURL string, specs []transportSpec) string {
+	const placeholder = "http://#"
+	if explicit != "" {
+		return explicit
+	}
+	if globalURL != "" && globalURL != placeholder {
+		return globalURL
+	}
+	best := -1
+	for i, s := range specs {
+		if s.Type == "cupsonline" || s.URL == "" || s.URL == placeholder {
+			continue
+		}
+		if best < 0 || s.Priority > specs[best].Priority {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return specs[best].URL
+	}
+	return placeholder
+}
+
 // managerRefreshLoop periodically asks the exit node for a fresh cookie jar.
 // Runs on the client side only, when --transports or --negotiate is set.
 func managerRefreshLoop(m *manager.Manager) {
@@ -147,6 +218,10 @@ func main() {
 	encryptionKeyFile := flag.String("encryption-key-file", "",
 		"Optional: encrypt the transport with AES-256-GCM using a shared secret read from this file. "+
 			"Both peers must use the same secret; unset means unencrypted, unchanged behavior")
+	sessionContextFlag := flag.String("session-context", "",
+		"Explicit KDF context for --encryption-key-file. Both peers must use the same value. "+
+			"Default: derived from the document URL (--url, any --<type>-url, or [Transport] URL "+
+			"from --config), falling back to --transport. Only set this to override that derivation.")
 
 	flag.StringVar(&globalDocUrl, "url", "http://#", "Document URL. If u use Yandex.Docs transport")
 	flag.StringVar(&maxToken, "maxToken", "", "MAX Web token. If u use MAX transport")
@@ -155,7 +230,7 @@ func main() {
 	directListen := flag.String("direct-listen", "", "DirectTransport: local address to listen on (exit). Requires --encryption-key-file")
 	transportsFlag := flag.String("transports", "",
 		"Comma-separated list of transports with priorities, e.g. "+
-			"\"direct:100,yandex:50,mailru:30\". If empty, --transport is used as a single transport.")
+			"\"direct:100,yandex:50\". If empty, --transport is used as a single transport.")
 	yandexURL := flag.String("yandex-url", "", "URL for the yandex transport (overrides --url in --transports mode)")
 	vyandexURL := flag.String("vyandex-url", "", "URL for the vyandex transport")
 	flag.StringVar(&yandexCookiesFile, "yandex-cookies-file", "", "Netscape cookies.txt with a Yandex login for vyandex transports")
@@ -180,7 +255,9 @@ func main() {
 	benchBytes := flag.Int("bench-bytes", 0, "Benchmark: push this many MB through the transport, then report and exit")
 	benchCompressible := flag.Bool("bench-compressible", false, "Benchmark: use compressible payload instead of random")
 
-	debug := flag.Bool("debug", false, "Enable verbose debug logging")
+	debug := flag.Int("debug", 0, "Debug level: 1 packets (-d), 2 operational logs (-dd), 3 hexdumps (-ddd)")
+	sensitive := flag.Bool("sensitive", false, "Also log key material and, with -ddd, plaintext frames (cookie jars, tokens)")
+	sensitiveAlias := flag.Bool("sensetive", false, "Alias for --sensitive")
 
 	// Deprecated aliases, kept for one release to ease migration.
 	depClient := flag.Bool("client", false, "DEPRECATED: use --role=client")
@@ -259,6 +336,10 @@ TRANSPORT MODIFIERS
                                AES-256-GCM wrapper. Required with
                                --transports or --negotiate. Both peers
                                must share the same key.
+      --session-context=<str>  Explicit KDF context for that key. Both peers
+                               must use the same value. Default: --url, else
+                               the URL of the highest-priority transport,
+                               else "http://#".
       --negotiate              Require authenticated capability negotiation
                                on both peers. No legacy fallback.
       --max-packet-size=N      Max IPv4 packet in negotiated mode
@@ -279,7 +360,14 @@ BENCHMARK  (only with --role=bench-*)
       --bench-compressible     Repetitive payload (bench-send).
 
 LOGGING
-  -d, --debug                  Verbose per-packet logging.
+  -d, --debug=1                Packet movement: one line per IPv4 packet,
+                               "-> 52 bytes - UDP 10.10.10.2:53000 -> 8.8.8.8:53 ...".
+  -dd, --debug=2               Plus operational logs: sessions, carriers,
+                               handshakes, crypto, control, errors.
+  -ddd, --debug=3              Plus hexdumps of packets and ciphertext.
+      --sensitive              Also log key material and, with -ddd, the
+                               plaintext frames (control messages carry
+                               cookie jars and tokens). Off by default.
 
 DEPRECATED (removed in v2)
   -client, -exit-node      -> --role=client|exit
@@ -294,6 +382,11 @@ DEPRECATED (removed in v2)
 
 	// Apply .conf file if requested. Only flags that were not explicitly set
 	// on the command line are overridden.
+	//
+	// confTransports is declared at function scope (not inside the if) so
+	// pickSessionContext can see it below: a .conf-only deployment has no
+	// --url/--yandex-url and its document URL lives in the [Transport]
+	// sections, which must still contribute to the KDF context.
 	var confTransports []transportSpec
 	if *configPath != "" {
 		conf, err := parseConf(*configPath)
@@ -310,11 +403,19 @@ DEPRECATED (removed in v2)
 		applyConfString(conf.Interface, "Codec", "codec", codec, setFlags)
 		applyConfString(conf.Interface, "Socks5", "socks5", socksAddr, setFlags)
 		applyConfString(conf.Interface, "EncryptionKeyFile", "encryption-key-file", encryptionKeyFile, setFlags)
+		applyConfString(conf.Interface, "SessionContext", "session-context", sessionContextFlag, setFlags)
 		applyConfString(conf.Interface, "CookieStore", "cookie-store", cookieStorePath, setFlags)
 		applyConfString(conf.Interface, "IPCSocket", "ipc-socket", ipcSocketPath, setFlags)
 		applyConfString(conf.Interface, "URL", "url", &globalDocUrl, setFlags)
 		if v, ok := confValue(conf.Interface, "Debug"); ok && !setFlags["debug"] {
-			*debug = confBool(v, *debug)
+			if b, err := strconv.Atoi(v); err == nil {
+				*debug = b
+			} else if confBool(v, false) {
+				*debug = 1
+			}
+		}
+		if v, ok := confValue(conf.Interface, "Sensitive"); ok && !setFlags["sensitive"] && !setFlags["sensetive"] {
+			*sensitive = confBool(v, *sensitive)
 		}
 
 		for _, t := range conf.Transports {
@@ -428,7 +529,7 @@ DEPRECATED (removed in v2)
 		if err != nil {
 			log.Fatalf("tun: %v", err)
 		}
-		log.Printf("Сокеты ядра привязаны к интерфейсу %d", index)
+		log.Printf("core sockets bound to interface %d", index)
 	}
 
 	// Warn when the exit runs on l4 (gVisor): it works everywhere but is
@@ -448,9 +549,11 @@ DEPRECATED (removed in v2)
 		godebug.SetGCPercent(20)
 	}
 
-	if *debug {
-		utils.EnableDebug()
+	utils.SetLevel(*debug)
+	if *sensitive || *sensitiveAlias {
+		utils.SetSensitive(true)
 	}
+	utils.Debugf("[INIT] debug level=%d sensitive=%v", utils.Level(), utils.Sensitive())
 
 	log.Printf("=== Universal Bypass Tool ===")
 	log.Printf("Role: %s", *role)
@@ -507,7 +610,7 @@ DEPRECATED (removed in v2)
 			"mailru":     *mailruURL,
 			"cupsonline": *cupsonlineURL,
 		}
-		if globalDocUrl != "" && urls["yandex"] == "" {
+		if globalDocUrl != "" && globalDocUrl != "http://#" && urls["yandex"] == "" {
 			urls["yandex"] = globalDocUrl
 		}
 		extra := map[string]map[string]interface{}{
@@ -546,6 +649,9 @@ DEPRECATED (removed in v2)
 	}
 
 	// Encryption secret is mandatory when --negotiate is set.
+	//
+	// The session context is the KDF salt for the encryption keys and MUST
+	// be identical on both peers; see pickSessionContext.
 	var secret string
 	var sessionContext string
 	if *encryptionKeyFile != "" {
@@ -554,10 +660,25 @@ DEPRECATED (removed in v2)
 			log.Fatalf("Read encryption key file: %v", err)
 		}
 		secret = strings.TrimSpace(string(b))
+		if len(secret) < 16 {
+			log.Fatalf("Encryption key from %s is too short (%d chars, need at least 16)",
+				*encryptionKeyFile, len(secret))
+		}
+		if strings.ContainsAny(secret, "\r\n\t") {
+			utils.Debugf("[KEY] WARNING: secret still contains whitespace after TrimSpace; lengths may differ across platforms")
+		}
+		// No hash of the secret without --sensitive: it would let anyone
+		// with the log test guesses without paying for scrypt.
+		utils.Debugf("[KEY] loaded from %s: len=%d", *encryptionKeyFile, len(secret))
+		if utils.Sensitive() {
+			utils.Debugf("[KEY] secret sha256=%s", utils.Sha256Hex([]byte(secret)))
+		}
 	}
-	sessionContext = *transportType
-	if globalDocUrl != "" {
-		sessionContext = globalDocUrl
+
+	sessionContext = pickSessionContext(*sessionContextFlag, globalDocUrl, specs)
+	if *encryptionKeyFile != "" {
+		utils.Debugf("[KEY] context=%q sha256=%s (MUST match on both peers)",
+			sessionContext, utils.Sha256Hex([]byte(sessionContext)))
 	}
 
 	// Decide whether we run the full Session path (encryption + negotiate)
@@ -777,11 +898,11 @@ DEPRECATED (removed in v2)
 	}
 }
 
-// statusServer is the IPC bridge, when --ipc-socket is set.
+// statusServer is the IPC bridge, set when --ipc-socket is given.
 var statusServer *ipc.Server
 
 // ipcStatusLoop reports the session to the app every second: whether a
-// carrier reaches the peer, traffic totals and which carrier is in use.
+// carrier reaches the peer, traffic totals, uptime and the active carrier.
 func ipcStatusLoop(srv *ipc.Server, m *manager.Manager) {
 	started := time.Now()
 	tick := time.NewTicker(time.Second)
@@ -859,9 +980,9 @@ func runClient(trans transport.Transport, inbound, socksAddr, httpProxyAddr stri
 func runClientTUN(trans transport.Transport) {
 	tc, err := NewTUNClient(trans, 1280)
 	if err != nil {
-		log.Fatalf("tun: %v", err)
+		log.Fatalf("utun: %v", err)
 	}
-	log.Printf("tun interface: %s", tc.Name())
+	log.Printf("utun interface: %s", tc.Name())
 
 	// Save the CURRENT default (which may be another VPN's utun) so
 	// we can restore it on exit no matter what.
@@ -869,9 +990,9 @@ func runClientTUN(trans transport.Transport) {
 		log.Fatalf("save default route: %v", err)
 	}
 	if err := tc.SetupInterface(); err != nil {
-		log.Fatalf("setup tun (needs root/administrator): %v", err)
+		log.Fatalf("setup utun (need sudo): %v", err)
 	}
-	log.Printf("tun up; bypass gateway is %s", tc.Gateway())
+	log.Printf("utun up; bypass gateway is %s", tc.Gateway())
 
 	watcher := NewSocketWatcher(tc.Gateway(), func() {
 		log.Printf("Socket set stable; taking default route into the tunnel")
@@ -881,7 +1002,6 @@ func runClientTUN(trans transport.Transport) {
 		}
 		tc.Start()
 		log.Printf("Tunnel active")
-		log.Printf("Running as CLIENT (full tunnel on %s)", tc.Name())
 	})
 	watcher.Start(2 * time.Second)
 

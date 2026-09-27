@@ -5,8 +5,6 @@ github_output/
 *.dll
 *.so
 *.dylib
-universal-bypass-tool
-universal-bypass-tool-*
 app
 app.exe
 
@@ -52,9 +50,6 @@ ios-app/DerivedData/
 app-linux
 app-darwin
 app.exe
-universal-bypass-tool
-universal-bypass-tool.exe
-universal-bypass-tool
 oflx
 oflx-new
 deploy.sh
